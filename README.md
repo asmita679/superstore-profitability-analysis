@@ -201,10 +201,9 @@ python -m unittest discover -s tests -v
 
 ---
 
-## 👤 Author & IBM Interview Preparation Notes
+##  ## Skills Demonstrated
 
-This project was built to illustrate real-world competencies relevant to an **IBM Data Analytics** role:
-- **Data Engineering**: Robust path resolution, safe encoding detection, and database indexing.
-- **SQL Competency**: Complex aggregations, CTEs/CASE statements, and analytical querying with SQLite.
-- **Statistical Rigor**: Careful distinction between statistical association and causal inference.
-- **Business Acumen**: Translating raw data into actionable enterprise recommendations (pricing governance, SKU rationalization, and regional distribution audits).
+- **Python & Pandas:** Data cleaning, transformation, and validation.
+- **SQL & SQLite:** Business queries, aggregations, and profitability analysis.
+- **Data Visualization:** Interactive dashboards using Streamlit and Plotly.
+- **Business Analysis:** Identifying sales trends, loss-making products, and discount-related profitability patterns.
