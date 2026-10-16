@@ -21,32 +21,31 @@ st.markdown(
     <style>
     /* Metric Cards */
     div[data-testid="stMetric"] {
-        background-color: #f4f7fb;
-        border: 1px solid #d0d7de;
+        background-color: #161b22;
+        border: 1px solid #30363d;
         border-radius: 8px;
-        padding: 12px 14px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        padding: 12px 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         min-width: 0 !important;
     }
     div[data-testid="stMetricLabel"] {
-        font-size: 0.80rem !important;
+        font-size: 0.78rem !important;
         font-weight: 600 !important;
-        color: #525252 !important;
+        color: #8b949e !important;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
     }
     div[data-testid="stMetricValue"] {
-        font-size: 1.35rem !important;
+        font-size: 1.25rem !important;
         font-weight: 700 !important;
-        color: #161616 !important;
+        color: #f0f6fc !important;
         white-space: nowrap !important;
         overflow: visible !important;
         line-height: 1.25 !important;
-    }
-    div[data-testid="stMetricDelta"] {
-        font-size: 0.80rem !important;
-        white-space: nowrap !important;
+        letter-spacing: -0.2px;
     }
     .insight-card {
         background-color: #ffffff;
@@ -250,23 +249,13 @@ unique_orders = int(filtered_df["Order ID"].nunique())
 total_quantity = int(filtered_df["Quantity"].sum())
 profit_margin = (total_profit / total_sales * 100) if total_sales > 0 else 0.0
 
-# Weighted column widths ensure full currency amounts ($2,297,200.86) remain readable without clipping
-col1, col2, col3, col4, col5 = st.columns([1.25, 1.15, 0.9, 0.85, 0.85])
+# Five evenly spaced, visually balanced columns across the available content width
+col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Total Sales", f"${total_sales:,.2f}")
-col2.metric(
-    "Total Profit",
-    f"${total_profit:,.2f}",
-    delta=f"{profit_margin:.2f}% Margin",
-    delta_color="normal" if total_profit >= 0 else "inverse",
-)
+col2.metric("Total Profit", f"${total_profit:,.2f}")
 col3.metric("Unique Orders", f"{unique_orders:,}")
 col4.metric("Units Sold", f"{total_quantity:,}")
-col5.metric(
-    "Profit Margin",
-    f"{profit_margin:.2f}%",
-    delta="Healthy (>=12%)" if profit_margin >= 12.0 else "Sub-optimal (<12%)",
-    delta_color="normal" if profit_margin >= 12.0 else "inverse",
-)
+col5.metric("Profit Margin", f"{profit_margin:.2f}%")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
