@@ -24,20 +24,29 @@ st.markdown(
         background-color: #f4f7fb;
         border: 1px solid #d0d7de;
         border-radius: 8px;
-        padding: 14px 18px;
+        padding: 12px 14px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        min-width: 0 !important;
     }
     div[data-testid="stMetricLabel"] {
-        font-size: 0.85rem !important;
+        font-size: 0.80rem !important;
         font-weight: 600 !important;
         color: #525252 !important;
         text-transform: uppercase;
         letter-spacing: 0.5px;
+        white-space: nowrap !important;
     }
     div[data-testid="stMetricValue"] {
-        font-size: 1.8rem !important;
+        font-size: 1.35rem !important;
         font-weight: 700 !important;
         color: #161616 !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+        line-height: 1.25 !important;
+    }
+    div[data-testid="stMetricDelta"] {
+        font-size: 0.80rem !important;
+        white-space: nowrap !important;
     }
     .insight-card {
         background-color: #ffffff;
@@ -48,6 +57,7 @@ st.markdown(
         padding: 16px 20px;
         border-radius: 4px;
         margin-bottom: 16px;
+        min-height: 220px;
     }
     .insight-card.warning {
         border-left-color: #da1e28;
@@ -110,30 +120,12 @@ def load_data() -> pd.DataFrame:
 df_raw = load_data()
 
 # ==============================================================================
-# 3. SIDEBAR FILTERS
+# 3. SIDEBAR FILTERS & STATE MANAGEMENT
 # ==============================================================================
 st.sidebar.header("🔍 Dashboard Filters")
 
-# Reset filters button
-if st.sidebar.button("🔄 Reset All Filters", use_container_width=True):
-    st.session_state["sel_regions"] = list(df_raw["Region"].unique())
-    st.session_state["sel_categories"] = list(df_raw["Category"].unique())
-    st.session_state["sel_segments"] = list(df_raw["Segment"].unique())
-    st.session_state["sel_discount_bands"] = list(df_raw["Discount Band"].dropna().unique())
-    st.rerun()
-
-# Date range filter
 min_date = df_raw["Order Date"].min().date()
 max_date = df_raw["Order Date"].max().date()
-
-date_range = st.sidebar.date_input(
-    "Order Date Range",
-    value=(min_date, max_date),
-    min_value=min_date,
-    max_value=max_date,
-)
-
-# Multi-select options
 all_regions = sorted(df_raw["Region"].unique().tolist())
 all_categories = sorted(df_raw["Category"].unique().tolist())
 all_segments = sorted(df_raw["Segment"].unique().tolist())
@@ -144,19 +136,66 @@ all_discount_bands = [
     ">40% (Deep)",
 ]
 
+# Check if a reset was requested from any button
+if st.session_state.get("needs_reset", False):
+    st.session_state["sel_date_range"] = (min_date, max_date)
+    st.session_state["sel_regions"] = all_regions
+    st.session_state["sel_categories"] = all_categories
+    st.session_state["sel_segments"] = all_segments
+    st.session_state["sel_discount_bands"] = all_discount_bands
+    st.session_state["needs_reset"] = False
+
+# Initialize session state for all filters on first run
+if "sel_date_range" not in st.session_state:
+    st.session_state["sel_date_range"] = (min_date, max_date)
+if "sel_regions" not in st.session_state:
+    st.session_state["sel_regions"] = all_regions
+if "sel_categories" not in st.session_state:
+    st.session_state["sel_categories"] = all_categories
+if "sel_segments" not in st.session_state:
+    st.session_state["sel_segments"] = all_segments
+if "sel_discount_bands" not in st.session_state:
+    st.session_state["sel_discount_bands"] = all_discount_bands
+
+
+def request_filter_reset():
+    """Flag that a full filter reset should be performed on the next run."""
+    st.session_state["needs_reset"] = True
+
+
+st.sidebar.button(
+    "🔄 Reset All Filters",
+    on_click=request_filter_reset,
+    use_container_width=True,
+)
+
+# Date range filter
+date_range = st.sidebar.date_input(
+    "Order Date Range",
+    min_value=min_date,
+    max_value=max_date,
+    key="sel_date_range",
+)
+
+# Multi-select filters
 selected_regions = st.sidebar.multiselect(
-    "Region", options=all_regions, default=all_regions, key="sel_regions"
+    "Region",
+    options=all_regions,
+    key="sel_regions",
 )
 selected_categories = st.sidebar.multiselect(
-    "Category", options=all_categories, default=all_categories, key="sel_categories"
+    "Category",
+    options=all_categories,
+    key="sel_categories",
 )
 selected_segments = st.sidebar.multiselect(
-    "Customer Segment", options=all_segments, default=all_segments, key="sel_segments"
+    "Customer Segment",
+    options=all_segments,
+    key="sel_segments",
 )
 selected_discount_bands = st.sidebar.multiselect(
     "Discount Tier",
     options=all_discount_bands,
-    default=all_discount_bands,
     key="sel_discount_bands",
 )
 
@@ -192,9 +231,13 @@ st.markdown(
     "*Understanding revenue performance, margin erosion, and opportunities for profitable growth.*"
 )
 
-# Empty dataset handler
+# Empty dataset handler with clear recovery action
 if filtered_df.empty:
-    st.warning("⚠️ No records match the current filter selection. Please broaden your filter criteria in the sidebar.")
+    st.warning(
+        "⚠️ **No matching records found for the current filter criteria.**\n\n"
+        "Please adjust your date range, regions, categories, segments, or discount tiers in the sidebar to view data."
+    )
+    st.button("🔄 Reset Filters Now", on_click=request_filter_reset)
     st.stop()
 
 
@@ -207,7 +250,8 @@ unique_orders = int(filtered_df["Order ID"].nunique())
 total_quantity = int(filtered_df["Quantity"].sum())
 profit_margin = (total_profit / total_sales * 100) if total_sales > 0 else 0.0
 
-col1, col2, col3, col4, col5 = st.columns(5)
+# Weighted column widths ensure full currency amounts ($2,297,200.86) remain readable without clipping
+col1, col2, col3, col4, col5 = st.columns([1.25, 1.15, 0.9, 0.85, 0.85])
 col1.metric("Total Sales", f"${total_sales:,.2f}")
 col2.metric(
     "Total Profit",
@@ -220,7 +264,7 @@ col4.metric("Units Sold", f"{total_quantity:,}")
 col5.metric(
     "Profit Margin",
     f"{profit_margin:.2f}%",
-    delta="Healthy" if profit_margin >= 12.0 else "Needs Review",
+    delta="Healthy (>=12%)" if profit_margin >= 12.0 else "Sub-optimal (<12%)",
     delta_color="normal" if profit_margin >= 12.0 else "inverse",
 )
 
@@ -245,7 +289,7 @@ tab_overview, tab_products, tab_geography, tab_discounts, tab_data = st.tabs(
 # ------------------------------------------------------------------------------
 with tab_overview:
     st.subheader("1. Monthly Sales & Profit Performance")
-    
+
     monthly_trend = (
         filtered_df.groupby("Order Month")
         .agg(
@@ -255,7 +299,9 @@ with tab_overview:
         )
         .reset_index()
     )
-    monthly_trend["Profit_Margin_%"] = (monthly_trend["Profit"] / monthly_trend["Sales"]) * 100
+    monthly_trend["Profit_Margin_%"] = (
+        monthly_trend["Profit"] / monthly_trend["Sales"] * 100
+    ).fillna(0)
 
     fig_trend = go.Figure()
     fig_trend.add_trace(
@@ -298,7 +344,7 @@ with tab_overview:
     )
     st.plotly_chart(fig_trend, use_container_width=True)
 
-    # Secondary comparison: Annual YoY Breakdown
+    # Annual Performance Summary
     annual_summary = (
         filtered_df.groupby("Order Year")
         .agg(
@@ -309,7 +355,9 @@ with tab_overview:
         )
         .reset_index()
     )
-    annual_summary["Profit Margin %"] = (annual_summary["Profit"] / annual_summary["Sales"]) * 100
+    annual_summary["Profit Margin %"] = (
+        annual_summary["Profit"] / annual_summary["Sales"] * 100
+    ).fillna(0)
 
     col_a, col_b = st.columns([1, 1])
     with col_a:
@@ -350,7 +398,7 @@ with tab_products:
             .agg(Sales=("Sales", "sum"), Profit=("Profit", "sum"))
             .reset_index()
         )
-        cat_agg["Margin_%"] = (cat_agg["Profit"] / cat_agg["Sales"]) * 100
+        cat_agg["Margin_%"] = (cat_agg["Profit"] / cat_agg["Sales"] * 100).fillna(0)
 
         fig_cat = go.Figure()
         fig_cat.add_trace(
@@ -409,7 +457,7 @@ with tab_products:
         st.plotly_chart(fig_subcat, use_container_width=True)
 
     st.markdown("---")
-    st.write("##### 3. Top 10 Product Loss Leaders (Highest Negative Profit)")
+    st.write("##### 3. Top 10 Product Loss Leaders (Highest Negative Profit in Filtered View)")
     prod_loss = (
         filtered_df.groupby(["Product Name", "Category", "Sub-Category"])
         .agg(
@@ -444,7 +492,7 @@ with tab_geography:
             .agg(Sales=("Sales", "sum"), Profit=("Profit", "sum"))
             .reset_index()
         )
-        reg_agg["Margin_%"] = (reg_agg["Profit"] / reg_agg["Sales"]) * 100
+        reg_agg["Margin_%"] = (reg_agg["Profit"] / reg_agg["Sales"] * 100).fillna(0)
 
         fig_reg = go.Figure()
         fig_reg.add_trace(
@@ -485,19 +533,22 @@ with tab_geography:
             .head(10)
         )
 
+        state_loss["Color"] = state_loss["Profit"].apply(
+            lambda x: "#24a148" if x >= 0 else "#da1e28"
+        )
         fig_state = go.Figure(
             go.Bar(
                 x=state_loss["Profit"],
                 y=state_loss["State"],
                 orientation="h",
-                marker_color="#da1e28",
+                marker_color=state_loss["Color"],
                 text=state_loss["Profit"].map("${:,.0f}".format),
                 textposition="outside",
             )
         )
         fig_state.update_layout(
             template="plotly_white",
-            title="Top 10 Loss-Making States ($ Net Profit)",
+            title="Bottom 10 States by Net Profit ($)",
             height=380,
             xaxis=dict(title="Total Profit ($)", zeroline=True, zerolinecolor="#161616"),
             margin=dict(l=20, r=40, t=40, b=20),
@@ -505,15 +556,19 @@ with tab_geography:
         st.plotly_chart(fig_state, use_container_width=True)
 
     # Detailed table of bottom states
-    st.write("##### State-Level Loss Audit (Bottom 10 States)")
+    st.write("##### State-Level Performance Audit (Bottom 10 States in Current Filter)")
     fmt_state = state_loss.copy()
     fmt_state["Sales"] = fmt_state["Sales"].map("${:,.2f}".format)
     fmt_state["Profit"] = fmt_state["Profit"].map("${:,.2f}".format)
     fmt_state["Avg_Discount"] = fmt_state["Avg_Discount"].map("{:.1%}".format)
     fmt_state["Margin %"] = (
-        (state_loss["Profit"] / state_loss["Sales"] * 100).map("{:.2f}%".format)
+        (state_loss["Profit"] / state_loss["Sales"] * 100).fillna(0).map("{:.2f}%".format)
     )
-    st.dataframe(fmt_state, hide_index=True, use_container_width=True)
+    st.dataframe(
+        fmt_state[["State", "Region", "Sales", "Profit", "Avg_Discount", "Margin %"]],
+        hide_index=True,
+        use_container_width=True,
+    )
 
 
 # ------------------------------------------------------------------------------
@@ -523,14 +578,13 @@ with tab_discounts:
     st.subheader("5. Discount Impact & Margin Sensitivity")
     st.info(
         "💡 **Methodology Note:** The figures below reflect empirical associations within "
-        "the historical dataset. High discounting correlates with substantial profit erosion; "
+        "the filtered dataset. High discounting correlates with substantial profit erosion; "
         "however, discounts may interact with specific product categories, clearances, and contract pricing."
     )
 
     col_disc1, col_disc2 = st.columns(2)
 
     with col_disc1:
-        # Discount tier aggregate
         tier_order = [
             "0% (No Discount)",
             "1-20% (Low)",
@@ -546,9 +600,12 @@ with tab_discounts:
                 Total_Profit=("Profit", "sum"),
             )
             .reindex(tier_order)
+            .fillna(0)
             .reset_index()
         )
-        tier_agg["Margin_%"] = (tier_agg["Total_Profit"] / tier_agg["Total_Sales"]) * 100
+        tier_agg["Margin_%"] = (
+            tier_agg["Total_Profit"] / tier_agg["Total_Sales"] * 100
+        ).fillna(0)
         tier_agg["Color"] = tier_agg["Total_Profit"].apply(
             lambda x: "#24a148" if x >= 0 else "#da1e28"
         )
@@ -572,10 +629,8 @@ with tab_discounts:
         st.plotly_chart(fig_tier, use_container_width=True)
 
     with col_disc2:
-        # Scatter plot: Discount vs Profit
-        # Sample for rendering speed if dataset exceeds 3000 rows
         scatter_sample = (
-            filtered_df.sample(2500, random_state=42)
+            filtered_df.sample(min(2500, len(filtered_df)), random_state=42)
             if len(filtered_df) > 2500
             else filtered_df
         )
@@ -601,7 +656,6 @@ with tab_discounts:
         )
         st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # Discount Band Summary Table
     st.write("##### Discount Tier Breakdown Table")
     fmt_tier = tier_agg.copy()
     fmt_tier["Total_Sales"] = fmt_tier["Total_Sales"].map("${:,.2f}".format)
@@ -621,19 +675,12 @@ with tab_discounts:
 # ------------------------------------------------------------------------------
 with tab_data:
     st.subheader("6. Transaction Level Records")
-    
-    col_search, col_export = st.columns([3, 1])
-    with col_search:
-        search_query = st.text_input("Filter by Order ID, Customer Name, or Product Name:")
-    with col_export:
-        csv_data = filtered_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📥 Export Filtered CSV",
-            data=csv_data,
-            file_name="filtered_superstore_data.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
+
+    # Search query applied directly to filtered records
+    search_query = st.text_input(
+        "Filter table by Order ID, Customer Name, or Product Name:",
+        key="table_search_input",
+    )
 
     display_df = filtered_df
     if search_query:
@@ -644,9 +691,24 @@ with tab_data:
         )
         display_df = display_df[mask]
 
+    col_search_info, col_export = st.columns([3, 1])
+    with col_search_info:
+        st.caption(f"Displaying {len(display_df):,} of {len(filtered_df):,} filtered transactions.")
+    with col_export:
+        # Export reflects the EXACT filtered and searched records
+        csv_data = display_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label=f"📥 Export Filtered CSV ({len(display_df):,} rows)",
+            data=csv_data,
+            file_name="filtered_superstore_data.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
     selected_cols = [
         "Order ID",
         "Order Date",
+        "Customer Name",
         "Category",
         "Sub-Category",
         "Region",
@@ -662,7 +724,8 @@ with tab_data:
         use_container_width=True,
         hide_index=True,
     )
-    st.caption(f"Showing up to 500 of {len(display_df):,} matching rows.")
+    if len(display_df) > 500:
+        st.caption(f"Showing first 500 rows. Use 'Export Filtered CSV' to download all {len(display_df):,} records.")
 
 
 # ==============================================================================
@@ -671,20 +734,130 @@ with tab_data:
 st.markdown("---")
 st.subheader("💡 Executive Insights & Strategic Recommendations")
 
-# Calculate live metrics for insights to ensure mathematical integrity
-furn_sales = filtered_df[filtered_df["Category"] == "Furniture"]["Sales"].sum()
-furn_profit = filtered_df[filtered_df["Category"] == "Furniture"]["Profit"].sum()
-furn_margin = (furn_profit / furn_sales * 100) if furn_sales > 0 else 0.0
+# Compute live, dynamic analytics from filtered_df to prevent stale or hardcoded figures
+cat_profit_summary = filtered_df.groupby("Category").agg(
+    Sales=("Sales", "sum"), Profit=("Profit", "sum")
+)
+cat_profit_summary["Margin %"] = (
+    cat_profit_summary["Profit"] / cat_profit_summary["Sales"] * 100
+).fillna(0)
 
-tech_sales = filtered_df[filtered_df["Category"] == "Technology"]["Sales"].sum()
-tech_profit = filtered_df[filtered_df["Category"] == "Technology"]["Profit"].sum()
-tech_margin = (tech_profit / tech_sales * 100) if tech_sales > 0 else 0.0
+subcat_profit_summary = (
+    filtered_df.groupby("Sub-Category")["Profit"].sum().sort_values(ascending=True)
+)
+loss_subcats = subcat_profit_summary[subcat_profit_summary < 0]
 
-table_profit = filtered_df[filtered_df["Sub-Category"] == "Tables"]["Profit"].sum()
-bookcase_profit = filtered_df[filtered_df["Sub-Category"] == "Bookcases"]["Profit"].sum()
+deep_disc_df = filtered_df[filtered_df["Discount"] > 0.20]
+deep_disc_sales = deep_disc_df["Sales"].sum()
+deep_disc_profit = deep_disc_df["Profit"].sum()
+deep_disc_margin = (deep_disc_profit / deep_disc_sales * 100) if deep_disc_sales > 0 else 0.0
 
-deep_disc_loss = filtered_df[filtered_df["Discount"] > 0.20]["Profit"].sum()
-zero_disc_profit = filtered_df[filtered_df["Discount"] == 0]["Profit"].sum()
+low_disc_df = filtered_df[filtered_df["Discount"] <= 0.20]
+low_disc_sales = low_disc_df["Sales"].sum()
+low_disc_profit = low_disc_df["Profit"].sum()
+low_disc_margin = (low_disc_profit / low_disc_sales * 100) if low_disc_sales > 0 else 0.0
+
+state_profit_summary = (
+    filtered_df.groupby("State")
+    .agg(Sales=("Sales", "sum"), Profit=("Profit", "sum"), Avg_Discount=("Discount", "mean"))
+    .sort_values("Profit", ascending=True)
+)
+loss_states = state_profit_summary[state_profit_summary["Profit"] < 0]
+
+top_profit_subcats = (
+    filtered_df.groupby("Sub-Category")
+    .agg(Sales=("Sales", "sum"), Profit=("Profit", "sum"))
+    .sort_values("Profit", ascending=False)
+)
+top_profit_subcats["Margin %"] = (
+    top_profit_subcats["Profit"] / top_profit_subcats["Sales"] * 100
+).fillna(0)
+
+# Build Dynamic Insight 1: Category Margins & Loss Sub-Categories
+if not cat_profit_summary.empty:
+    lowest_cat = cat_profit_summary["Margin %"].idxmin()
+    lowest_cat_margin = cat_profit_summary.loc[lowest_cat, "Margin %"]
+    highest_cat = cat_profit_summary["Margin %"].idxmax()
+    highest_cat_margin = cat_profit_summary.loc[highest_cat, "Margin %"]
+    cat_metric_text = (
+        f"Lowest: {lowest_cat} ({lowest_cat_margin:.2f}%) vs. Highest: {highest_cat} ({highest_cat_margin:.2f}%)"
+    )
+    if not loss_subcats.empty:
+        worst_subcat_list = ", ".join(
+            [f"<b>{name}</b> (${val:,.2f})" for name, val in loss_subcats.head(2).items()]
+        )
+        cat_body_text = (
+            f"Within the filtered slice, <b>{lowest_cat}</b> demonstrates the lowest margin efficiency. "
+            f"Key sub-category loss drivers include: {worst_subcat_list}."
+        )
+    else:
+        best_sub = subcat_profit_summary.index[-1]
+        best_val = subcat_profit_summary.iloc[-1]
+        cat_body_text = (
+            f"All sub-categories in the current selection are profitable. "
+            f"Leading profit generator is <b>{best_sub}</b> (${best_val:,.2f})."
+        )
+else:
+    cat_metric_text = "No category data"
+    cat_body_text = "No records in current selection."
+
+# Build Dynamic Insight 2: Discount Tier Impact
+disc_metric_text = (
+    f"Discounts >20%: ${deep_disc_profit:,.2f} ({deep_disc_margin:.2f}% Margin) vs. "
+    f"<=20%: ${low_disc_profit:,.2f} ({low_disc_margin:.2f}% Margin)"
+)
+if len(deep_disc_df) > 0:
+    disc_body_text = (
+        f"Filtered transactions with discounts exceeding 20% total ${deep_disc_sales:,.2f} in sales "
+        f"but yield {deep_disc_margin:.2f}% net margin. Higher discounting does not generate sufficient "
+        "volume to compensate for severe unit margin erosion."
+    )
+else:
+    disc_body_text = (
+        "The current filter selection contains no deep-discount (>20%) transactions, "
+        "resulting in healthy overall margin preservation."
+    )
+
+# Build Dynamic Insight 3: Geographic Distribution
+if not loss_states.empty:
+    worst_state_names = ", ".join(loss_states.head(3).index.tolist())
+    total_state_loss = loss_states["Profit"].sum()
+    geo_metric_text = f"{len(loss_states)} Loss-Making States Totaling ${total_state_loss:,.2f} in Deficits"
+    top_loss_details = ", ".join(
+        [
+            f"<b>{st}</b> (${loss_states.loc[st, 'Profit']:,.2f}, avg discount {loss_states.loc[st, 'Avg_Discount']:.1%})"
+            for st in loss_states.head(3).index
+        ]
+    )
+    geo_body_text = (
+        f"Profitability drag is localized in key states: {top_loss_details}. "
+        "These states exhibit elevated discount rates that erode bottom-line returns."
+    )
+else:
+    best_state = state_profit_summary.index[-1] if not state_profit_summary.empty else "N/A"
+    best_state_profit = (
+        state_profit_summary.loc[best_state, "Profit"] if not state_profit_summary.empty else 0.0
+    )
+    geo_metric_text = "All Filtered States Are Profitable"
+    geo_body_text = (
+        f"Every state in the active filter selection contributes positive net profit. "
+        f"Top performing state is <b>{best_state}</b> (${best_state_profit:,.2f})."
+    )
+
+# Build Dynamic Insight 4: Core Growth Opportunities
+if not top_profit_subcats.empty:
+    lead_sub = top_profit_subcats.index[0]
+    lead_profit = top_profit_subcats.loc[lead_sub, "Profit"]
+    lead_margin = top_profit_subcats.loc[lead_sub, "Margin %"]
+    growth_metric_text = f"{lead_sub} Leads with ${lead_profit:,.2f} Profit ({lead_margin:.1f}% Margin)"
+    growth_body_text = (
+        f"Top sub-categories like <b>{lead_sub}</b> drive high-margin cash flow. "
+        "Customer demand in these categories exhibits high price elasticity tolerance."
+    )
+else:
+    growth_metric_text = "No growth data"
+    growth_body_text = "No records in current selection."
+
 
 ins1, ins2 = st.columns(2)
 
@@ -692,14 +865,13 @@ with ins1:
     st.markdown(
         f"""
         <div class="insight-card warning">
-            <div class="insight-title">1. Furniture Margin Compression & Loss Leaders</div>
-            <div class="insight-metric">Furniture Margin: {furn_margin:.2f}% vs. Technology: {tech_margin:.2f}%</div>
+            <div class="insight-title">1. Category Margin Dispersion & Loss Drivers</div>
+            <div class="insight-metric">{cat_metric_text}</div>
             <div class="insight-body">
-                While Furniture accounts for roughly one-third of company revenue, its profit contribution is severely impaired. 
-                Specifically, <b>Tables</b> (cumulative profit: ${table_profit:,.2f}) and <b>Bookcases</b> (${bookcase_profit:,.2f}) are major financial drains due to excessive promotions and high logistical costs.
+                {cat_body_text}
             </div>
             <div class="insight-rec">
-                <b>Actionable Recommendation:</b> Re-negotiate supplier agreements for Tables, introduce minimum order thresholds, and bundle low-margin items with high-margin Technology accessories.
+                <b>Actionable Recommendation:</b> Re-negotiate vendor terms for persistent loss-makers, introduce minimum price floors, and bundle low-margin items with high-margin technology accessories.
             </div>
         </div>
         """,
@@ -709,14 +881,13 @@ with ins1:
     st.markdown(
         f"""
         <div class="insight-card warning">
-            <div class="insight-title">2. Discount Threshold & Severe Margin Degradation</div>
-            <div class="insight-metric">Discounts >20% Profit: ${deep_disc_loss:,.2f} vs. 0% Discount: ${zero_disc_profit:,.2f}</div>
+            <div class="insight-title">2. Discount Sensitivity & Margin Degradation</div>
+            <div class="insight-metric">{disc_metric_text}</div>
             <div class="insight-body">
-                Transactions with discounts exceeding 20% consistently generate negative aggregate net margins (-15% to -77%). 
-                The additional sales volume generated does not compensate for the steep loss in unit economics.
+                {disc_body_text}
             </div>
             <div class="insight-rec">
-                <b>Actionable Recommendation:</b> Implement hard governance caps at 20% maximum discount for standard sales reps, requiring regional managerial sign-off for deals exceeding 25%.
+                <b>Actionable Recommendation:</b> Enforce a 20% discount governance ceiling for sales reps, requiring regional managerial sign-off for larger promotional allowances.
             </div>
         </div>
         """,
@@ -725,16 +896,15 @@ with ins1:
 
 with ins2:
     st.markdown(
-        """
-        <div class="insight-card warning">
-            <div class="insight-title">3. Geographic Loss Concentration in Key Central States</div>
-            <div class="insight-metric">Texas, Ohio, Pennsylvania, and Illinois Lead All State-Level Losses</div>
+        f"""
+        <div class="insight-card {'warning' if not loss_states.empty else ''}">
+            <div class="insight-title">3. Geographic Performance & State Deficits</div>
+            <div class="insight-metric">{geo_metric_text}</div>
             <div class="insight-body">
-                Underperformance is geographically localized rather than nationwide. The Central region suffers the lowest profit margin (7.9%), 
-                disproportionately dragged down by sustained losses in Texas (-$25.7k) and Illinois (-$12.6k), both exhibiting average discount rates between 37% and 39%.
+                {geo_body_text}
             </div>
             <div class="insight-rec">
-                <b>Actionable Recommendation:</b> Audit local pricing authority and freight contracts in Texas and Illinois to align gross margins with high-performing Western states.
+                <b>Actionable Recommendation:</b> Audit local pricing authority and freight carrier contracts in underperforming territories to match gross margins achieved in profitable regions.
             </div>
         </div>
         """,
@@ -742,16 +912,15 @@ with ins2:
     )
 
     st.markdown(
-        """
+        f"""
         <div class="insight-card">
-            <div class="insight-title">4. High-Margin Core Growth Opportunities</div>
-            <div class="insight-metric">Copiers (37.2% Margin) & Paper/Binders Drive Sustainable Cash Flow</div>
+            <div class="insight-title">4. High-Yield Growth & Cash Flow Drivers</div>
+            <div class="insight-metric">{growth_metric_text}</div>
             <div class="insight-body">
-                Copiers, Phones, and Accessories generate healthy profits with minimal discounting. 
-                Corporate and Consumer segments both demonstrate strong price tolerance on essential office technology.
+                {growth_body_text}
             </div>
             <div class="insight-rec">
-                <b>Actionable Recommendation:</b> Allocate promotional spend and inventory allocation toward high-yield sub-categories (Copiers, Phones, Storage) to maximize EBITDA.
+                <b>Actionable Recommendation:</b> Shift marketing spend and inventory buffer toward high-yield sub-categories with proven price tolerance to maximize EBITDA.
             </div>
         </div>
         """,
